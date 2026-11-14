@@ -32,7 +32,7 @@ describe('CloudVideoPlatformStack', () => {
   it('protects every API route with the Cognito JWT authorizer', () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', { AuthorizerType: 'JWT' });
     const routes = template.findResources('AWS::ApiGatewayV2::Route');
-    expect(Object.keys(routes)).toHaveLength(10);
+    expect(Object.keys(routes)).toHaveLength(11);
     for (const r of Object.values(routes)) {
       expect(r.Properties.AuthorizationType).toBe('JWT');
     }
@@ -52,6 +52,17 @@ describe('CloudVideoPlatformStack', () => {
   it('lets browsers upload to the videos bucket only from the CloudFront site', () => {
     template.hasResourceProperties('AWS::S3::Bucket', {
       CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ['POST'] })] },
+    });
+  });
+
+  it('runs the processor as a container image, triggered by new videos via EventBridge', () => {
+    template.hasResourceProperties('AWS::Lambda::Function', { PackageType: 'Image', MemorySize: 2048 });
+    template.hasResourceProperties('AWS::Events::Rule', {
+      EventPattern: Match.objectLike({
+        source: ['aws.s3'],
+        'detail-type': ['Object Created'],
+        detail: Match.objectLike({ object: { key: [{ prefix: 'videos/' }] } }),
+      }),
     });
   });
 

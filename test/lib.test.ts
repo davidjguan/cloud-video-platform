@@ -1,6 +1,6 @@
 import {
   isValidVideoKey, titleFromKey, parseBody, toSeconds, HttpError, json,
-  slugify, requireText, parseGroups, displayName, newCommentId, chunk,
+  slugify, requireText, parseGroups, displayName, newCommentId, chunk, thumbnailStatus,
 } from '../lambda/api/lib';
 
 describe('isValidVideoKey', () => {
@@ -89,5 +89,16 @@ describe('misc helpers', () => {
     const r = json(200, { ok: true });
     expect(r.statusCode).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ ok: true });
+  });
+});
+
+describe('thumbnailStatus', () => {
+  it('says what the site should show in the thumbnail spot', () => {
+    expect(thumbnailStatus({ thumbnailKey: 'thumbnails/a.jpg', status: 'ready' })).toBe('ready');
+    expect(thumbnailStatus({ thumbnailKey: 'thumbnails/a.jpg', status: 'failed' })).toBe('ready'); // old image still good
+    expect(thumbnailStatus({ status: 'processing' })).toBe('processing');
+    expect(thumbnailStatus({ status: 'failed' })).toBe('failed');
+    expect(thumbnailStatus({})).toBe('missing');       // older video, never processed
+    expect(thumbnailStatus(undefined)).toBe('missing'); // video with no metadata row
   });
 });

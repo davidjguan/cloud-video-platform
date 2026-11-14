@@ -13,7 +13,7 @@ import {
   BatchGetCommand, PutCommand, GetCommand, DeleteCommand, TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ddb, s3, config } from './aws';
-import { HttpError, titleFromKey, slugify, requireText, chunk } from './lib';
+import { HttpError, titleFromKey, slugify, requireText, chunk, thumbnailStatus } from './lib';
 import { markWatched, type UserRecord } from './users';
 import { deleteAllComments } from './comments';
 import type { Caller } from './handler';
@@ -21,11 +21,21 @@ import type { Caller } from './handler';
 interface VideoMeta {
   videoKey: string;
   title?: string;
+  description?: string;
+  keywords?: string[];
   uploaderId?: string;
   uploaderName?: string;
+  source?: string;        // where the clip came from, e.g. "Pixabay"
+  sourceUrl?: string;
+  credit?: string;
+  durationSeconds?: number;
+  thumbnailKey?: string;  // image in the videos bucket, under thumbnails/
+  status?: string;        // 'processing' | 'ready' | 'failed' (set by upload + processor)
   createdAt?: number;
   likeCount?: number;
 }
+
+const THUMBNAIL_URL_SECONDS = 3600;
 
 async function getMeta(key: string): Promise<VideoMeta | undefined> {
   const r = await ddb.send(new GetCommand({ TableName: config.videosTable, Key: { videoKey: key } }));
@@ -59,20 +69,31 @@ export async function listVideos(caller: Caller) {
     for (const item of r.Responses?.[config.videosTable] ?? []) meta.set(item.videoKey, item as VideoMeta);
   }
 
-  const videos = objects
-    .map((o) => {
-      const m = meta.get(o.Key!);
-      return {
-        key: o.Key!,
-        title: m?.title ?? titleFromKey(o.Key!),
-        sizeMB: Math.round((o.Size ?? 0) / 100_000) / 10,
-        uploadedAt: m?.createdAt ?? Math.floor((o.LastModified?.getTime() ?? 0) / 1000),
-        uploader: m?.uploaderName ?? null,
-        likeCount: Math.max(0, m?.likeCount ?? 0),
-        canDelete: canDelete(caller, m),
-      };
-    })
-    .sort((a, b) => b.uploadedAt - a.uploadedAt); // newest first
+  const videos = await Promise.all(objects.map(async (o) => {
+    const m = meta.get(o.Key!);
+    // Presigning is a local signature calculation (no network call), so this is fast.
+    const thumbnailUrl = m?.thumbnailKey
+      ? await getSignedUrl(s3, new GetObjectCommand({ Bucket: config.videosBucket, Key: m.thumbnailKey }),
+        { expiresIn: THUMBNAIL_URL_SECONDS })
+      : null;
+    return {
+      key: o.Key!,
+      title: m?.title ?? titleFromKey(o.Key!),
+      description: m?.description ?? '',
+      keywords: m?.keywords ?? [],
+      sizeMB: Math.round((o.Size ?? 0) / 100_000) / 10,
+      durationSeconds: m?.durationSeconds ?? null,
+      uploadedAt: m?.createdAt ?? Math.floor((o.LastModified?.getTime() ?? 0) / 1000),
+      uploader: m?.uploaderName ?? null,
+      credit: m?.credit ?? null,
+      sourceUrl: m?.sourceUrl ?? null,
+      thumbnailUrl,
+      thumbnailStatus: thumbnailStatus(m),
+      likeCount: Math.max(0, m?.likeCount ?? 0),
+      canDelete: canDelete(caller, m),
+    };
+  }));
+  videos.sort((a, b) => b.uploadedAt - a.uploadedAt); // newest first
   return { videos };
 }
 
@@ -120,6 +141,7 @@ export async function createUpload(caller: Caller, body: Record<string, unknown>
     uploaderName: caller.name,
     createdAt: Math.floor(Date.now() / 1000),
     likeCount: 0,
+    status: 'processing', // the processor flips this to 'ready' or 'failed'
   };
   await ddb.send(new PutCommand({ TableName: config.videosTable, Item: meta }));
 
@@ -132,6 +154,9 @@ export async function deleteVideo(caller: Caller, key: string) {
   if (!canDelete(caller, meta)) throw new HttpError(403, 'Only the uploader or an admin can delete this video');
 
   await s3.send(new DeleteObjectCommand({ Bucket: config.videosBucket, Key: key }));
+  if (meta?.thumbnailKey) {
+    await s3.send(new DeleteObjectCommand({ Bucket: config.videosBucket, Key: meta.thumbnailKey }));
+  }
   await ddb.send(new DeleteCommand({ TableName: config.videosTable, Key: { videoKey: key } }));
   const removedComments = await deleteAllComments(key);
   return { deleted: true, key, removedComments };

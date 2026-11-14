@@ -98,6 +98,21 @@ export function parseGroups(claim: unknown): string[] {
   return claim.replace(/^\[|\]$/g, '').split(/[\s,]+/).filter(Boolean);
 }
 
+/**
+ * What the site shows in a video's thumbnail spot:
+ *   ready      - a thumbnail exists
+ *   processing - just uploaded, the processor hasn't finished yet
+ *   failed     - the processor couldn't read the video
+ *   missing    - an older video that was never processed (an admin can backfill it)
+ * A thumbnail wins even if a later forced re-run failed, since the old image is still good.
+ */
+export function thumbnailStatus(meta?: { thumbnailKey?: string; status?: string }):
+  'ready' | 'processing' | 'failed' | 'missing' {
+  if (meta?.thumbnailKey) return 'ready';
+  if (meta?.status === 'processing' || meta?.status === 'failed') return meta.status;
+  return 'missing';
+}
+
 /** Public display name: the part of the email before the @. */
 export function displayName(email: string): string {
   return (email.split('@')[0] || 'user').slice(0, 40);

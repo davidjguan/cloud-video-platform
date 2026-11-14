@@ -180,6 +180,7 @@ async function enterHome() {
   show(me.isNew ? 'Welcome! Your profile was created.' : '', true);
   $('who').textContent = session.email;
   $('adminBadge').classList.toggle('hidden', !me.isAdmin);
+  $('adminTools').classList.toggle('hidden', !me.isAdmin);
   showView('homeView');
   await loadVideos();
 }
@@ -201,13 +202,23 @@ function videoRow(v) {
   const resume = me.user.progress?.[v.key];
   const liked = !!me.user.likes?.[v.key];
 
-  const info = el('div', {},
+  const thumb = el('div', { className: 'thumb' });
+  if (!v.thumbnailUrl) {
+    // Only fresh uploads say "Processing…"; failed and never-processed videos say "No preview".
+    const label = v.thumbnailStatus === 'processing' ? 'Processing…' : 'No preview';
+    thumb.append(el('span', { className: 'pending', textContent: label }));
+  }
+  if (v.thumbnailUrl) thumb.append(el('img', { src: v.thumbnailUrl, alt: '', loading: 'lazy' }));
+  if (v.durationSeconds) thumb.append(el('span', { className: 'dur', textContent: formatTime(v.durationSeconds) }));
+  thumb.onclick = () => play(v);
+
+  const info = el('div', { className: 'info' },
     el('div', {}, v.title,
       watched ? el('span', { className: 'badge', textContent: '✓ watched' }) : null,
       resume ? el('span', { className: 'badge', textContent: `resume at ${formatTime(resume)}` }) : null),
     el('div', {
       className: 'meta',
-      textContent: [v.uploader ? `by ${v.uploader}` : null, `${v.sizeMB} MB`, `👍 ${v.likeCount}`]
+      textContent: [v.credit ? `Credit: ${v.credit}` : v.uploader ? `by ${v.uploader}` : null, `${v.sizeMB} MB`, `👍 ${v.likeCount}`]
         .filter(Boolean).join(' · '),
     }));
 
@@ -216,7 +227,7 @@ function videoRow(v) {
   if (v.canDelete) buttons.append(el('button', { className: 'small secondary', textContent: 'Delete', onclick: () => removeVideo(v) }));
   buttons.append(el('button', { className: 'small', textContent: resume ? 'Resume' : 'Play', onclick: () => play(v) }));
 
-  return el('div', { className: 'video' }, info, buttons);
+  return el('div', { className: 'video' }, el('div', { className: 'left' }, thumb, info), buttons);
 }
 
 function renderVideos() {
@@ -244,6 +255,12 @@ async function play(v) {
     p.src = data.url;
     p.onloadedmetadata = () => { if (data.resumeAt) p.currentTime = data.resumeAt; p.play().catch(() => {}); };
     $('nowPlaying').textContent = v.title;
+    $('videoDesc').textContent = v.description || '';
+    $('videoCredit').innerHTML = '';
+    if (v.sourceUrl) {
+      $('videoCredit').append(`Credit: ${v.credit || 'source'} · `,
+        el('a', { href: v.sourceUrl, target: '_blank', rel: 'noopener', textContent: 'original' }));
+    }
     $('playerPanel').classList.remove('hidden');
     $('playerPanel').scrollIntoView({ behavior: 'smooth' });
     renderLike();
@@ -360,8 +377,9 @@ $('uploadForm').addEventListener('submit', (e) => {
     bar.classList.add('hidden');
     bar.value = 0;
     f.reset();
-    show('Uploaded! Your video is now in the catalog.', true);
+    show('Uploaded! Making a thumbnail in the background…', true);
     await loadVideos();
+    refreshUntilThumbnails();
   });
 });
 
@@ -393,3 +411,28 @@ async function removeVideo(v) {
   }
   showView('signInView');
 })();
+
+// --------------------------------------------- Thumbnails (made in the background)
+// After an upload or a backfill, re-check every 5 s until every video has a thumbnail
+// (gives up after 3 minutes).
+let thumbTimer = null;
+function refreshUntilThumbnails(deadline = Date.now() + 3 * 60_000) {
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(async () => {
+    if (!session) return;
+    await loadVideos();
+    const missing = videos.filter((v) => !v.thumbnailUrl).length;
+    if (missing && Date.now() < deadline) refreshUntilThumbnails(deadline);
+  }, 5000);
+}
+
+$('backfillBtn').addEventListener('click', async () => {
+  const btn = $('backfillBtn');
+  btn.disabled = true;
+  try {
+    await api('POST', '/admin/thumbnails', {});
+    show('Making thumbnails for videos that don\'t have one. They\'ll appear over the next minute or two.', true);
+    refreshUntilThumbnails();
+  } catch (e) { show('Could not start: ' + e.message); }
+  finally { btn.disabled = false; }
+});

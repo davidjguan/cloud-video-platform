@@ -5,15 +5,18 @@ process.env.USERS_TABLE = 'Users';
 process.env.VIDEOS_TABLE = 'Videos';
 process.env.COMMENTS_TABLE = 'Comments';
 process.env.VIDEOS_BUCKET = 'videos-bucket';
+process.env.PROCESSOR_FUNCTION = 'processor-fn';
 
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand, TransactWriteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { handler } from '../lambda/api/handler';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const s3Mock = mockClient(S3Client);
+const lambdaMock = mockClient(LambdaClient);
 
 const VIDEO = 'videos/beach-day.mp4';
 
@@ -39,6 +42,7 @@ const parse = (r: { body: string }) => JSON.parse(r.body);
 beforeEach(() => {
   ddbMock.reset();
   s3Mock.reset();
+  lambdaMock.reset();
   s3Mock.on(HeadObjectCommand).resolves({});
 });
 
@@ -143,5 +147,22 @@ describe('videos', () => {
     const r = await handler(event('POST /api/likes', { body: { key: VIDEO, like: true } }));
     expect(r.statusCode).toBe(200);
     expect(parse(r).likeCount).toBe(1);
+  });
+});
+
+describe('admin thumbnail backfill', () => {
+  it('is refused for regular users', async () => {
+    const r = await handler(event('POST /api/admin/thumbnails', { body: {} }));
+    expect(r.statusCode).toBe(403);
+    expect(lambdaMock.commandCalls(InvokeCommand)).toHaveLength(0);
+  });
+
+  it('starts the processor in the background for admins', async () => {
+    lambdaMock.on(InvokeCommand).resolves({ StatusCode: 202 });
+    const r = await handler(event('POST /api/admin/thumbnails', { body: {}, groups: '[admins]' }));
+    expect(r.statusCode).toBe(202);
+    const input = lambdaMock.commandCalls(InvokeCommand)[0].args[0].input;
+    expect(input).toMatchObject({ FunctionName: 'processor-fn', InvocationType: 'Event' });
+    expect(JSON.parse(Buffer.from(input.Payload as Uint8Array).toString())).toEqual({ action: 'backfill', force: false });
   });
 });

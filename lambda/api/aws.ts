@@ -2,6 +2,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
+import { LambdaClient } from '@aws-sdk/client-lambda';
 
 export const config = {
   usersTable: process.env.USERS_TABLE!,
@@ -10,9 +11,11 @@ export const config = {
   videosBucket: process.env.VIDEOS_BUCKET!,
   playUrlSeconds: Number(process.env.URL_EXPIRES_SECONDS ?? '900'),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES ?? String(100 * 1024 * 1024)),
+  processorFunction: process.env.PROCESSOR_FUNCTION ?? '',
 };
 
 export const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
 export const s3 = new S3Client({});
+export const lambdaClient = new LambdaClient({});

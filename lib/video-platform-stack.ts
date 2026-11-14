@@ -15,6 +15,9 @@ import * as apigwIntegrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as apigwAuthorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import { buildSync } from 'esbuild';
 
 /**
  * Request flow:
@@ -24,6 +27,12 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
  *      └── sign up / sign in ──► Cognito (issues the JWT the API checks)
  *
  * Videos are played from the private S3 bucket through presigned URLs made by the Lambda.
+ *
+ * Processing pipeline (runs in the background after every upload):
+ *
+ *   S3 (videos/) ──"Object Created"──► EventBridge rule ──► Processor Lambda (container image in ECR, ffmpeg)
+ *                                                               ├─► thumbnail JPEG ──► S3 (thumbnails/)
+ *                                                               └─► duration + size ──► DynamoDB Videos table
  */
 export class CloudVideoPlatformStack extends cdk.Stack {
   // Fixed AZ list so `cdk synth` (and the tests) don't need to call AWS to look them up.
@@ -41,6 +50,7 @@ export class CloudVideoPlatformStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // keep your uploaded videos even if the stack is deleted
+      eventBridgeEnabled: true, // send "Object Created" events to EventBridge (starts the processor)
     });
 
     // Private bucket holding the website files. EC2 pulls from here every minute.
@@ -74,7 +84,7 @@ export class CloudVideoPlatformStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // ------------------------------------------------------- NEW: Cognito auth
+    // ------------------------------------------------------- Cognito auth
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: true,
       signInAliases: { email: true },          // users sign in with their email
@@ -135,12 +145,70 @@ export class CloudVideoPlatformStack extends cdk.Stack {
     videosBucket.grantRead(apiFunction, 'videos/*');   // play + check a video exists
     videosBucket.grantPut(apiFunction, 'videos/*');    // sign upload forms
     videosBucket.grantDelete(apiFunction, 'videos/*'); // delete videos
+    videosBucket.grantRead(apiFunction, 'thumbnails/*');   // show thumbnails
+    videosBucket.grantDelete(apiFunction, 'thumbnails/*'); // remove a deleted video's thumbnail
     apiFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:ListBucket'],                      // list the catalog
       resources: [videosBucket.bucketArn],
     }));
 
-    // ------------------------------------------------- NEW: API Gateway (HTTP API)
+    // ------------------------------------------ Video processor (EventBridge + ECR)
+    // Bundle the processor's TypeScript into one file; the Dockerfile copies it into the image.
+    const processorDir = path.join(__dirname, '..', 'lambda', 'processor');
+    buildSync({
+      entryPoints: [path.join(processorDir, 'index.ts')],
+      outfile: path.join(processorDir, 'dist', 'index.js'),
+      bundle: true,
+      platform: 'node',
+      target: 'node22',
+      minify: true,
+      logLevel: 'warning',
+    });
+
+    // A container image (built by `cdk deploy`, stored in ECR) because ffmpeg is too big
+    // and too awkward to ship in a normal Lambda zip.
+    const processorFunction = new lambda.DockerImageFunction(this, 'ProcessorFunction', {
+      description: 'Makes thumbnails and reads duration for uploaded videos (ffmpeg)',
+      code: lambda.DockerImageCode.fromImageAsset(processorDir),
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 2048,                     // more memory = more CPU for ffmpeg
+      timeout: cdk.Duration.minutes(15),    // a backfill processes many videos in one run
+      environment: {
+        VIDEOS_BUCKET: videosBucket.bucketName,
+        VIDEOS_TABLE: videosTable.tableName,
+      },
+      logGroup: new logs.LogGroup(this, 'ProcessorFunctionLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    videosBucket.grantRead(processorFunction, 'videos/*');     // read videos (ffmpeg streams them)
+    videosBucket.grantPut(processorFunction, 'thumbnails/*');  // write thumbnails only
+    processorFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],                               // backfill lists the videos
+      resources: [videosBucket.bucketArn],
+    }));
+    videosTable.grantReadWriteData(processorFunction);
+
+    // Every new .mp4 in videos/ triggers the processor.
+    new events.Rule(this, 'VideoUploadedRule', {
+      description: 'New video in S3 -> make thumbnail',
+      eventPattern: {
+        source: ['aws.s3'],
+        detailType: ['Object Created'],
+        detail: {
+          bucket: { name: [videosBucket.bucketName] },
+          object: { key: [{ prefix: 'videos/' }] },
+        },
+      },
+      targets: [new targets.LambdaFunction(processorFunction, { retryAttempts: 2 })],
+    });
+
+    // The API can start a backfill (admin-only button on the site).
+    apiFunction.addEnvironment('PROCESSOR_FUNCTION', processorFunction.functionName);
+    processorFunction.grantInvoke(apiFunction);
+
+    // ------------------------------------------------- API Gateway (HTTP API)
     // Every route requires a valid Cognito ID token; API Gateway rejects anything else
     // with 401 before the Lambda ever runs.
     const authorizer = new apigwAuthorizers.HttpJwtAuthorizer(
@@ -166,6 +234,7 @@ export class CloudVideoPlatformStack extends cdk.Stack {
       ['/api/comments', apigw.HttpMethod.GET],
       ['/api/comments', apigw.HttpMethod.POST],
       ['/api/comments', apigw.HttpMethod.DELETE],
+      ['/api/admin/thumbnails', apigw.HttpMethod.POST],
     ];
     for (const [routePath, method] of routes) {
       httpApi.addRoutes({ path: routePath, methods: [method], integration });
@@ -177,6 +246,8 @@ export class CloudVideoPlatformStack extends cdk.Stack {
 
     // --------------------------------------------------------------------- EC2
     // Small VPC with public subnets only (no NAT gateway, so no hourly NAT cost).
+    // We pin the AZs on purpose (see availabilityZones above) so synth needs no AWS calls.
+    cdk.Annotations.of(this).acknowledgeWarning('CloudFormation-Validate::W3010', 'AZs pinned so synth needs no AWS lookup');
     const vpc = new ec2.Vpc(this, 'Vpc', {
       maxAzs: 2,
       natGateways: 0,
@@ -257,7 +328,7 @@ export class CloudVideoPlatformStack extends cdk.Stack {
     const eipDashed = cdk.Fn.join('-', cdk.Fn.split('.', eip.attrPublicIp));
     const webServerDns = cdk.Fn.join('', ['ec2-', eipDashed, '.compute-1.amazonaws.com']);
 
-    // ------------------------------------------------------ NEW: CloudFront CDN
+    // ------------------------------------------------------ CloudFront CDN
     // One HTTPS domain for both the site and the API, so the browser never makes
     // cross-origin calls (no CORS setup needed).
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split('/', httpApi.apiEndpoint));
@@ -317,6 +388,7 @@ export class CloudVideoPlatformStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
     new cdk.CfnOutput(this, 'ApiEndpoint', { value: httpApi.apiEndpoint });
     new cdk.CfnOutput(this, 'UsersTableName', { value: usersTable.tableName });
+    new cdk.CfnOutput(this, 'VideosTableName', { value: videosTable.tableName });
     new cdk.CfnOutput(this, 'AddAdminCommand', {
       value: `aws cognito-idp admin-add-user-to-group --user-pool-id ${userPool.userPoolId} --group-name admins --username YOUR_EMAIL`,
       description: 'Run this (with your email) to make yourself an admin, then sign out and back in',

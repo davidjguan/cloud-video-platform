@@ -16,12 +16,14 @@
  *   GET    /api/comments?key=...
  *   POST   /api/comments   {key, text}
  *   DELETE /api/comments   {key, commentId}   author or admin
+ *   POST   /api/admin/thumbnails {force?}    admin: make thumbnails for videos missing one
  */
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { json, parseBody, requireVideoKey, toSeconds, parseGroups, displayName, HttpError, JsonResponse } from './lib';
 import { getOrCreateUser, saveProgress } from './users';
 import { listVideos, play, createUpload, deleteVideo, setLike, requireVideoExists } from './videos';
 import { listComments, addComment, deleteComment } from './comments';
+import { startThumbnailBackfill } from './admin';
 
 export interface Caller {
   userId: string;   // Cognito "sub": a permanent, unique user ID
@@ -81,6 +83,8 @@ export async function handler(event: APIGatewayProxyEventV2WithJWTAuthorizer): P
         await requireVideoExists(key);
         return json(201, await addComment(caller, key, body.text));
       }
+      case 'POST /api/admin/thumbnails':
+        return json(202, await startThumbnailBackfill(caller, body.force === true));
       case 'DELETE /api/comments':
         return json(200, await deleteComment(caller, requireVideoKey(body.key), body.commentId));
       default:

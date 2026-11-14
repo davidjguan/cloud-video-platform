@@ -2,9 +2,9 @@
 
 A video-sharing platform with real accounts, uploads, likes and comments, built on AWS and deployed entirely from code.
 
-It started as a class project (UMD CMSC398P, Practical Cloud Computing with AWS) and grew into a serverless app with infrastructure as code and CI/CD.
+Everything (servers, database, auth, the event-driven video processor) is defined as infrastructure as code and deployed by CI/CD on every push.
 
-**Stack:** Amazon Cognito · API Gateway (HTTP API) · CloudFront · EC2 (Nginx) · Lambda (TypeScript) · S3 · DynamoDB · AWS CDK · GitHub Actions
+**Stack:** Amazon Cognito · API Gateway (HTTP API) · CloudFront · EC2 (Nginx) · Lambda (TypeScript) · S3 · DynamoDB · EventBridge · ECR (container image with ffmpeg) · AWS CDK · GitHub Actions
 
 ## Features
 
@@ -13,6 +13,7 @@ It started as a class project (UMD CMSC398P, Practical Cloud Computing with AWS)
 - **Uploads:** any signed-in user can upload an .mp4 (up to 100 MB). The browser sends it straight to S3.
 - **Likes and comments** on every video. The author's identity comes from the verified login token, so it can't be faked.
 - **Moderation:** members of the Cognito `admins` group can delete any video or comment. Everyone else can only delete their own.
+- **Automatic thumbnails:** every upload is processed in the background. A container Lambda running ffmpeg grabs a frame and reads the duration. New uploads show "Processing…" until it finishes; if ffmpeg can't read a video it is marked `failed` and shows "No preview" instead of spinning forever. Admins can backfill thumbnails for older videos (and retry failed ones) with one click.
 - **Continue Watching:** playback position is saved every few seconds, and finished videos drop off the list.
 
 ## Architecture
@@ -30,6 +31,10 @@ flowchart LR
   L -- presigned URLs --> S3[(S3 videos bucket)]
   U -- "play / upload (presigned)" --> S3
   SITE[(S3 site bucket)] -- synced every minute --> EC2
+  S3 -- "Object Created" --> EB[EventBridge rule]
+  EB --> P[Processor Lambda<br/>container image in ECR · ffmpeg]
+  P -- thumbnail --> S3
+  P -- duration, size --> DDB
 ```
 
 | Service | Role |
@@ -41,6 +46,8 @@ flowchart LR
 | Lambda | Business logic: catalog, playback, uploads, likes, comments |
 | S3 | Private storage for videos and the website files |
 | DynamoDB | Users (history, progress, likes), video info, comments |
+| **EventBridge** | Routes S3 "Object Created" events for new videos to the processor |
+| **ECR** | Stores the processor's container image (Node.js + ffmpeg) |
 
 ### Design decisions
 
@@ -51,6 +58,9 @@ flowchart LR
 - **Locked-down server.** The EC2 security group only allows CloudFront's IP ranges on port 80, there's no SSH port, and admin access goes through SSM Session Manager.
 - **No stored AWS keys.** GitHub Actions signs in to AWS with OIDC: short-lived credentials, limited to this repo's `main` branch.
 - **Least privilege.** Each role can only reach the specific tables and bucket folders it needs.
+- **Heavy work happens off the request path.** Uploads return immediately; thumbnails are made asynchronously by an event-driven processor, with automatic retries.
+- **ffmpeg reads only what it needs.** The processor streams the video from S3 through a presigned URL, so making a thumbnail doesn't download the whole file.
+- **A container image for the processor.** ffmpeg is too large and awkward for a zipped Lambda, so the processor ships as a Docker image built by CDK and stored in ECR.
 
 ## Project layout
 
@@ -58,7 +68,8 @@ flowchart LR
 bin/app.ts                 CDK app entry point
 lib/video-platform-stack.ts       All application infrastructure
 lib/github-oidc-stack.ts   Keyless deploy role for GitHub Actions
-lambda/api/                Lambda: router (handler.ts) + users, videos, comments
+lambda/api/                Lambda: router (handler.ts) + users, videos, comments, admin
+lambda/processor/          Container Lambda (Dockerfile + ffmpeg): thumbnails and duration
 site/                      Front end (plain HTML/CSS/JS)
 test/                      Jest: helpers, handler authorization, infrastructure assertions
 .github/workflows/         Test on every push, deploy on main
@@ -98,6 +109,8 @@ You need **Node.js 20+**, **git** and the **AWS CLI**.
 
 1. In GitHub, go to the repo → **Settings → Secrets and variables → Actions → Variables**. Add `AWS_DEPLOY_ROLE_ARN` = the `GitHubDeployRoleArn` output.
 2. Every push to `main` type-checks, runs the tests and deploys `CloudVideoPlatformStack`. Pull requests only run the tests.
+
+The processor is a Docker image, so `cdk deploy` needs Docker. GitHub Actions has it built in. To deploy from your own laptop instead, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and keep it running while you deploy.
 
 ## Cost
 

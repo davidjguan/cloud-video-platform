@@ -32,3 +32,13 @@ progress { width: 100%; margin-bottom: 12px; }
 details { margin-top: 24px; }
 summary { cursor: pointer; font-weight: bold; margin-bottom: 10px; }
 pre { background: #1e293b; padding: 10px; font-size: 12px; overflow-x: auto; }
+.video .left { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.thumb { position: relative; width: 128px; aspect-ratio: 16 / 9; flex-shrink: 0; background: #0b1220; border-radius: 4px; overflow: hidden; cursor: pointer; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .dur { position: absolute; right: 4px; bottom: 4px; background: rgba(0, 0, 0, 0.75); font-size: 11px; padding: 1px 5px; border-radius: 3px; }
+.info { min-width: 0; }
+.credit { color: #94a3b8; font-size: 13px; margin: 8px 0 4px; }
+.desc { color: #cbd5e1; font-size: 14px; line-height: 1.4; white-space: pre-line; max-height: 8.5em; overflow-y: auto; }
+@media (max-width: 560px) { .thumb { width: 96px; } .video { flex-wrap: wrap; } }
+#adminTools { margin-top: 16px; }
+.thumb .pending { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #94a3b8; }
