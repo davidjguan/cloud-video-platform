@@ -6,6 +6,7 @@
   },
   "context": {
     "githubRepo": "davidjguan/cloud-video-platform",
+    "githubSubjectPrefix": "repo:davidjguan@145398233/cloud-video-platform@1457839957",
     "cloudfrontPrefixListId": "pl-3b927c52",
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/aws-iam:minimizePolicies": true

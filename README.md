@@ -89,6 +89,7 @@ You need **Node.js 20+**, **git** and the **AWS CLI**.
    npm test
    ```
 3. **Set your GitHub repo** in `cdk.json` → `context.githubRepo`, e.g. `"dguan/cloud-video-platform"`.
+   If your repo uses GitHub's *immutable subject* sign-in tokens (newer repos do), also set `context.githubSubjectPrefix` to the `sub_claim_prefix` from `gh api repos/OWNER/REPO/actions/oidc/customization/sub`. Otherwise AWS rejects the deploy with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
 4. **Bootstrap CDK** (once per account/region):
    ```bash
    npx cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-east-1

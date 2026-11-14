@@ -9,6 +9,10 @@
     "resolveJsonModule": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
+    // Lets ts-jest compile each test file on its own instead of type-checking against all of
+    // aws-cdk-lib (~900 MB per Jest worker, which ran CI out of memory). `npm run build` still
+    // type-checks everything, and CI runs it before the tests.
+    "isolatedModules": true,
     "types": ["node", "jest"]
   },
   "include": ["bin", "lib", "lambda", "test"],

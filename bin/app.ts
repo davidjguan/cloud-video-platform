@@ -17,5 +17,6 @@ new CloudVideoPlatformStack(app, 'CloudVideoPlatformStack', {
 new GitHubOidcStack(app, 'GitHubOidcStack', {
   env,
   githubRepo: app.node.tryGetContext('githubRepo'),
+  githubSubjectPrefix: app.node.tryGetContext('githubSubjectPrefix'),
   description: 'Keyless GitHub Actions deploy role (OIDC)',
 });

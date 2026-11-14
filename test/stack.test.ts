@@ -106,6 +106,22 @@ describe('GitHubOidcStack', () => {
     });
   });
 
+  it('trusts the immutable-subject format when a subject prefix is configured', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new GitHubOidcStack(app, 'Oidc', {
+      env, githubRepo: 'dave/cloud-video-platform', githubSubjectPrefix: 'repo:dave@1/cloud-video-platform@2',
+    }));
+    template.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: Match.objectLike({
+        Statement: [Match.objectLike({
+          Condition: Match.objectLike({
+            StringLike: { 'token.actions.githubusercontent.com:sub': 'repo:dave@1/cloud-video-platform@2:ref:refs/heads/main' },
+          }),
+        })],
+      }),
+    });
+  });
+
   it('refuses a missing repo name', () => {
     expect(() => new GitHubOidcStack(new cdk.App(), 'Bad', { env, githubRepo: '' })).toThrow();
   });

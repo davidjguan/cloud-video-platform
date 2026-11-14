@@ -5,6 +5,14 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 export interface GitHubOidcStackProps extends cdk.StackProps {
   /** "owner/repo", e.g. "dguan/cloud-video-platform" (set in cdk.json → context.githubRepo) */
   githubRepo: string;
+  /**
+   * Optional: how GitHub names your repo inside its sign-in token (cdk.json → context.githubSubjectPrefix).
+   * Newer repos use "immutable subjects" with permanent numeric IDs, e.g.
+   * "repo:dguan@123/cloud-video-platform@456", so a renamed or re-created repo can't impersonate yours.
+   * Find yours with: gh api repos/OWNER/REPO/actions/oidc/customization/sub (the sub_claim_prefix field).
+   * Leave unset for the classic format "repo:owner/repo".
+   */
+  githubSubjectPrefix?: string;
 }
 
 /**
@@ -22,6 +30,9 @@ export class GitHubOidcStack extends cdk.Stack {
       throw new Error('Set context.githubRepo in cdk.json to "your-github-username/your-repo"');
     }
 
+    // Must match the "sub" claim GitHub puts in the token exactly, or AWS refuses the sign-in.
+    const subjectPrefix = props.githubSubjectPrefix || `repo:${props.githubRepo}`;
+
     const provider = new iam.OpenIdConnectProvider(this, 'GitHubProvider', {
       url: 'https://token.actions.githubusercontent.com',
       clientIds: ['sts.amazonaws.com'],
@@ -33,7 +44,7 @@ export class GitHubOidcStack extends cdk.Stack {
       maxSessionDuration: cdk.Duration.hours(1),
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-        StringLike: { 'token.actions.githubusercontent.com:sub': `repo:${props.githubRepo}:ref:refs/heads/main` },
+        StringLike: { 'token.actions.githubusercontent.com:sub': `${subjectPrefix}:ref:refs/heads/main` },
       }),
     });
 
