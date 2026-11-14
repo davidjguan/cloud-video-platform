@@ -10,12 +10,14 @@ Everything (servers, database, auth, the event-driven video processor) is define
 
 - **Accounts:** sign up with email verification, sign in, stay signed in (Cognito).
 - **Streaming:** videos are stored in a private S3 bucket and played through 15-minute presigned URLs.
-- **Uploads:** any signed-in user can upload an .mp4 (up to 100 MB). The browser sends it straight to S3.
+- **Uploads:** any signed-in user can upload an .mp4 (up to 100 MB) from the Upload button: drag and drop, a preview before sending, a suggested title, and live progress. The browser sends the file straight to S3.
 - **View counts:** each person counts once per video, so replays and refreshes can't inflate the number.
 - **Likes and comments** on every video. The author's identity comes from the verified login token, so it can't be faked.
 - **Moderation:** members of the Cognito `admins` group can delete any video or comment. Everyone else can only delete their own.
 - **Automatic thumbnails:** every upload is processed in the background. A container Lambda running ffmpeg grabs a frame and reads the duration. New uploads show "Processing…" until it finishes; if ffmpeg can't read a video it is marked `failed` and shows "No preview" instead of spinning forever. Admins can backfill thumbnails for older videos (and retry failed ones) with one click.
-- **Continue Watching:** playback position is saved every few seconds, and finished videos drop off the list.
+- **Continue Watching:** playback position is saved every few seconds and shown as a progress bar on the thumbnail; finished videos drop off the list.
+- **Browsing:** a thumbnail grid plus rows for Continue watching, Recently added, Most viewed and Your liked videos. Each video has its own watch page (`#/watch/<video>`) with comments and an "Up next" list, so links and the Back button work.
+- **Your data:** an Account window shows your activity and lets you download your stored record as JSON.
 
 ## Architecture
 
@@ -61,6 +63,7 @@ flowchart LR
 - **Least privilege.** Each role can only reach the specific tables and bucket folders it needs.
 - **Heavy work happens off the request path.** Uploads return immediately; thumbnails are made asynchronously by an event-driven processor, with automatic retries.
 - **ffmpeg reads only what it needs.** The processor streams the video from S3 through a presigned URL, so making a thumbnail doesn't download the whole file.
+- **No front-end framework or build step.** The site is plain HTML, CSS and JavaScript served as-is, with hash-based routing (`#/watch/...`) and the browser's built-in `<dialog>` for pop-up windows. Asset URLs carry a version (`app.js?v=3`) so a release isn't hidden by a cached copy.
 - **A container image for the processor.** ffmpeg is too large and awkward for a zipped Lambda, so the processor ships as a Docker image built by CDK and stored in ECR.
 
 ## Project layout
