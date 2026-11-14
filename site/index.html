@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloud Video Platform</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Cloud Video Platform</h1>
+  <div id="account" class="hidden">
+    <span id="who"></span>
+    <span id="adminBadge" class="pill hidden">admin</span>
+    <button class="secondary" id="signOutBtn">Sign out</button>
+  </div>
+</header>
+
+<p id="msg" role="status"></p>
+
+<!-- Sign in -->
+<section id="signInView" class="card hidden">
+  <h2>Sign in</h2>
+  <form id="signInForm">
+    <label>Email <input type="email" name="email" autocomplete="username" required></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="switch">New here? <a href="#" data-view="signUpView">Create an account</a></p>
+</section>
+
+<!-- Sign up -->
+<section id="signUpView" class="card hidden">
+  <h2>Create account</h2>
+  <form id="signUpForm">
+    <label>Email <input type="email" name="email" autocomplete="username" required></label>
+    <label>Password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+    <small>At least 8 characters with an uppercase letter, a lowercase letter and a number.</small>
+    <button type="submit">Sign up</button>
+  </form>
+  <p class="switch">Already have an account? <a href="#" data-view="signInView">Sign in</a></p>
+</section>
+
+<!-- Confirm email -->
+<section id="confirmView" class="card hidden">
+  <h2>Check your email</h2>
+  <p>We sent a 6-digit code to <b id="confirmEmail"></b>.</p>
+  <form id="confirmForm">
+    <label>Code <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+    <button type="submit">Confirm</button>
+    <button type="button" class="secondary" id="resendBtn">Resend code</button>
+  </form>
+</section>
+
+<!-- Home (signed in) -->
+<section id="homeView" class="hidden">
+
+  <!-- Player + comments (shown once a video is picked) -->
+  <div id="playerPanel" class="hidden">
+    <h2 id="nowPlaying"></h2>
+    <video id="player" controls></video>
+    <div class="actions">
+      <button class="secondary" id="likeBtn">👍 Like</button>
+      <span id="likeCount"></span>
+    </div>
+    <h3>Comments</h3>
+    <div id="comments"></div>
+    <form id="commentForm" class="row">
+      <input name="text" maxlength="500" placeholder="Add a comment…" required>
+      <button type="submit">Post</button>
+    </form>
+  </div>
+
+  <div id="continueSection" class="hidden">
+    <h2>Continue watching</h2>
+    <div id="continueList"></div>
+  </div>
+
+  <h2>All videos</h2>
+  <div id="videoList">Loading…</div>
+
+  <details id="uploadSection">
+    <summary>Upload a video</summary>
+    <form id="uploadForm" class="card">
+      <label>Title <input name="title" maxlength="80" required></label>
+      <label>Video (.mp4, up to 100 MB) <input type="file" name="file" accept="video/mp4" required></label>
+      <progress id="uploadProgress" max="100" value="0" class="hidden"></progress>
+      <button type="submit">Upload</button>
+    </form>
+  </details>
+
+  <details>
+    <summary>Your data (from DynamoDB)</summary>
+    <pre id="userData"></pre>
+  </details>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

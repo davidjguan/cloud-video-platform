@@ -1,0 +1,10 @@
+node_modules/
+cdk.out/
+*.js
+!jest.config.js
+!site/*.js
+*.d.ts
+.DS_Store
+.env
+videos/
+coverage/
