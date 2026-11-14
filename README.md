@@ -1,6 +1,6 @@
 # Cloud Video Platform
 
-A video-sharing platform with real accounts, uploads, likes and comments, built on AWS and deployed entirely from code.
+A video-sharing platform with real accounts, uploads, view counts, likes and comments, built on AWS and deployed entirely from code.
 
 Everything (servers, database, auth, the event-driven video processor) is defined as infrastructure as code and deployed by CI/CD on every push.
 
@@ -11,6 +11,7 @@ Everything (servers, database, auth, the event-driven video processor) is define
 - **Accounts:** sign up with email verification, sign in, stay signed in (Cognito).
 - **Streaming:** videos are stored in a private S3 bucket and played through 15-minute presigned URLs.
 - **Uploads:** any signed-in user can upload an .mp4 (up to 100 MB). The browser sends it straight to S3.
+- **View counts:** each person counts once per video, so replays and refreshes can't inflate the number.
 - **Likes and comments** on every video. The author's identity comes from the verified login token, so it can't be faked.
 - **Moderation:** members of the Cognito `admins` group can delete any video or comment. Everyone else can only delete their own.
 - **Automatic thumbnails:** every upload is processed in the background. A container Lambda running ffmpeg grabs a frame and reads the duration. New uploads show "Processing…" until it finishes; if ffmpeg can't read a video it is marked `failed` and shows "No preview" instead of spinning forever. Admins can backfill thumbnails for older videos (and retry failed ones) with one click.
@@ -43,7 +44,7 @@ flowchart LR
 | **API Gateway** | The only way into the Lambda. Rejects any request without a valid Cognito token. |
 | **CloudFront** | One HTTPS domain for the site and the API. Only CloudFront can reach the EC2 server. |
 | EC2 | Nginx serves the static site, synced from S3 every minute |
-| Lambda | Business logic: catalog, playback, uploads, likes, comments |
+| Lambda | Business logic: catalog, playback, view counts, uploads, likes, comments |
 | S3 | Private storage for videos and the website files |
 | DynamoDB | Users (history, progress, likes), video info, comments |
 | **EventBridge** | Routes S3 "Object Created" events for new videos to the processor |
@@ -54,7 +55,7 @@ flowchart LR
 - **Identity comes from the token, not the request.** The Lambda reads the user ID and admin group from claims API Gateway has already verified. A user can't impersonate someone by editing a request.
 - **Uploads skip the API.** The API returns a presigned S3 POST form, so large files never pass through Lambda or API Gateway, which have small payload limits. S3 itself enforces the 100 MB limit and the content type.
 - **The site and API share one domain.** CloudFront routes `/api/*` to API Gateway, so the browser makes no cross-origin calls and CORS isn't needed.
-- **Like counts can't drift.** One DynamoDB transaction updates the user's likes and the video's counter together, with a condition that makes double-likes a no-op.
+- **Like and view counts can't drift.** One DynamoDB transaction updates the user's record and the video's counter together, with a condition that makes a repeat like (or a replay) a no-op. Views are unique viewers, not raw plays.
 - **Locked-down server.** The EC2 security group only allows CloudFront's IP ranges on port 80, there's no SSH port, and admin access goes through SSM Session Manager.
 - **No stored AWS keys.** GitHub Actions signs in to AWS with OIDC: short-lived credentials, limited to this repo's `main` branch.
 - **Least privilege.** Each role can only reach the specific tables and bucket folders it needs.

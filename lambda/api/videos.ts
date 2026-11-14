@@ -14,7 +14,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { ddb, s3, config } from './aws';
 import { HttpError, titleFromKey, slugify, requireText, chunk, thumbnailStatus } from './lib';
-import { markWatched, type UserRecord } from './users';
+import type { UserRecord } from './users';
 import { deleteAllComments } from './comments';
 import type { Caller } from './handler';
 
@@ -33,6 +33,7 @@ interface VideoMeta {
   status?: string;        // 'processing' | 'ready' | 'failed' (set by upload + processor)
   createdAt?: number;
   likeCount?: number;
+  viewCount?: number;     // unique viewers: each person counts once per video
 }
 
 const THUMBNAIL_URL_SECONDS = 3600;
@@ -90,6 +91,7 @@ export async function listVideos(caller: Caller) {
       thumbnailUrl,
       thumbnailStatus: thumbnailStatus(m),
       likeCount: Math.max(0, m?.likeCount ?? 0),
+      viewCount: Math.max(0, m?.viewCount ?? 0),
       canDelete: canDelete(caller, m),
     };
   }));
@@ -104,8 +106,49 @@ export async function play(user: UserRecord, key: string) {
     new GetObjectCommand({ Bucket: config.videosBucket, Key: key }),
     { expiresIn: config.playUrlSeconds },
   );
-  await markWatched(user.userId, key);
-  return { url, expiresIn: config.playUrlSeconds, resumeAt: user.progress?.[key] ?? 0 };
+  const newView = await recordView(user.userId, key);
+  return { url, expiresIn: config.playUrlSeconds, resumeAt: user.progress?.[key] ?? 0, newView };
+}
+
+/**
+ * Counts a view the first time each person plays a video (replays don't count again).
+ *
+ * One DynamoDB transaction does both writes, so they can't get out of sync:
+ *   1. Users table: record when this person first watched the video, only if they never had
+ *   2. Videos table: add 1 to viewCount
+ * If the person already watched it, the condition in step 1 fails, DynamoDB cancels the whole
+ * transaction, and nothing changes. Returns true when a new view was counted.
+ */
+async function recordView(userId: string, key: string): Promise<boolean> {
+  try {
+    await ddb.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Update: {
+            TableName: config.usersTable,
+            Key: { userId },
+            UpdateExpression: 'SET watched.#k = :t',
+            ConditionExpression: 'attribute_not_exists(watched.#k)',
+            ExpressionAttributeNames: { '#k': key },
+            ExpressionAttributeValues: { ':t': Math.floor(Date.now() / 1000) },
+          },
+        },
+        {
+          Update: {
+            TableName: config.videosTable,
+            Key: { videoKey: key },
+            UpdateExpression: 'ADD viewCount :one', // ADD is atomic, so simultaneous plays all count
+            ExpressionAttributeValues: { ':one': 1 },
+          },
+        },
+      ],
+    }));
+    return true;
+  } catch (err) {
+    // Cancelled = this person already watched the video. Not an error, just not a new view.
+    if ((err as Error).name !== 'TransactionCanceledException') throw err;
+    return false;
+  }
 }
 
 /**

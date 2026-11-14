@@ -38,16 +38,6 @@ export async function getOrCreateUser(caller: Caller): Promise<{ user: UserRecor
   }
 }
 
-export async function markWatched(userId: string, key: string): Promise<void> {
-  await ddb.send(new UpdateCommand({
-    TableName: config.usersTable,
-    Key: { userId },
-    UpdateExpression: 'SET watched.#k = if_not_exists(watched.#k, :t)',
-    ExpressionAttributeNames: { '#k': key },
-    ExpressionAttributeValues: { ':t': Math.floor(Date.now() / 1000) },
-  }));
-}
-
 /** Saves where the user paused. Finishing a video removes it from "Continue Watching". */
 export async function saveProgress(userId: string, key: string, seconds: number, finished: boolean) {
   await ddb.send(new UpdateCommand({

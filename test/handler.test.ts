@@ -6,6 +6,9 @@ process.env.VIDEOS_TABLE = 'Videos';
 process.env.COMMENTS_TABLE = 'Comments';
 process.env.VIDEOS_BUCKET = 'videos-bucket';
 process.env.PROCESSOR_FUNCTION = 'processor-fn';
+process.env.AWS_REGION = 'us-east-1';
+process.env.AWS_ACCESS_KEY_ID = 'test';     // fake keys so presigned play URLs work offline
+process.env.AWS_SECRET_ACCESS_KEY = 'test';
 
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand, TransactWriteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
@@ -147,6 +150,33 @@ describe('videos', () => {
     const r = await handler(event('POST /api/likes', { body: { key: VIDEO, like: true } }));
     expect(r.statusCode).toBe(200);
     expect(parse(r).likeCount).toBe(1);
+  });
+});
+
+describe('view counts', () => {
+  beforeEach(() => {
+    ddbMock.on(GetCommand, { TableName: 'Users' }).resolves({ Item: { userId: 'user-1', watched: {}, progress: {} } });
+  });
+
+  it("counts a view the first time someone plays a video", async () => {
+    ddbMock.on(TransactWriteCommand).resolves({});
+    const r = await handler(event('POST /api/play', { body: { key: VIDEO } }));
+    expect(r.statusCode).toBe(200);
+    expect(parse(r).newView).toBe(true);
+
+    // One transaction: mark it watched (only if not already) + add 1 to the video's viewCount
+    const [userUpdate, videoUpdate] = ddbMock.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(userUpdate.Update).toMatchObject({ TableName: 'Users', ConditionExpression: 'attribute_not_exists(watched.#k)' });
+    expect(videoUpdate.Update).toMatchObject({ TableName: 'Videos', UpdateExpression: 'ADD viewCount :one' });
+  });
+
+  it("doesn't count a replay by the same person", async () => {
+    const cancelled = Object.assign(new Error('cancelled'), { name: 'TransactionCanceledException' });
+    ddbMock.on(TransactWriteCommand).rejects(cancelled);
+    const r = await handler(event('POST /api/play', { body: { key: VIDEO } }));
+    expect(r.statusCode).toBe(200);       // still plays normally
+    expect(parse(r).newView).toBe(false); // but no new view
+    expect(parse(r).url).toContain('beach-day.mp4');
   });
 });
 

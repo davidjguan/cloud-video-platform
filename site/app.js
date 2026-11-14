@@ -218,7 +218,7 @@ function videoRow(v) {
       resume ? el('span', { className: 'badge', textContent: `resume at ${formatTime(resume)}` }) : null),
     el('div', {
       className: 'meta',
-      textContent: [v.credit ? `Credit: ${v.credit}` : v.uploader ? `by ${v.uploader}` : null, `${v.sizeMB} MB`, `👍 ${v.likeCount}`]
+      textContent: [v.credit ? `Credit: ${v.credit}` : v.uploader ? `by ${v.uploader}` : null, plural(v.viewCount, 'view'), `${v.sizeMB} MB`, `👍 ${v.likeCount}`]
         .filter(Boolean).join(' · '),
     }));
 
@@ -250,6 +250,8 @@ async function play(v) {
   savePosition();
   try {
     const data = await api('POST', '/play', { key: v.key });
+    // First time this person plays it? The server counted a view, so bump our copy too.
+    if (data.newView) v.viewCount = (v.viewCount || 0) + 1;
     current = v;
     const p = $('player');
     p.src = data.url;
@@ -283,12 +285,18 @@ $('player').addEventListener('pause', () => { if (!$('player').ended) savePositi
 $('player').addEventListener('ended', () => savePosition(true));
 
 // ----------------------------------------------------------------- Likes
+/** plural(1, 'view') -> "1 view", plural(1200, 'view') -> "1,200 views" */
+function plural(n, word) {
+  const count = n || 0;
+  return `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
+}
+
 function renderLike() {
   const v = videos.find((x) => x.key === current.key) || current;
   const liked = !!me.user.likes?.[current.key];
   $('likeBtn').textContent = liked ? '👍 Liked' : '👍 Like';
   $('likeBtn').className = liked ? 'liked' : 'secondary';
-  $('likeCount').textContent = `${v.likeCount} like${v.likeCount === 1 ? '' : 's'}`;
+  $('likeCount').textContent = `${plural(v.viewCount, 'view')} · ${plural(v.likeCount, 'like')}`;
 }
 
 async function toggleLike(v) {
