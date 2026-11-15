@@ -103,8 +103,8 @@ You need **Node.js 20+**, **git** and the **AWS CLI**.
 
 ## Continuous deployment
 
-1. In GitHub, go to the repo → **Settings → Secrets and variables → Actions → Variables**. Add `AWS_DEPLOY_ROLE_ARN` = the `GitHubDeployRoleArn` output.
-2. Every push to `main` type-checks, runs the tests and deploys `CloudVideoPlatformStack`. Pull requests only run the tests.
+1. In GitHub, go to the repo → **Settings → Secrets and variables → Actions → Secrets**. Add `AWS_DEPLOY_ROLE_ARN` = the `GitHubDeployRoleArn` output. It's a secret rather than a variable so GitHub masks it in the (public) logs.
+2. Every push to `main` type-checks, runs the tests and deploys `CloudVideoPlatformStack`. Pull requests only run the tests. The deploy step keeps CDK's full output (which lists the site URL and resource names) out of the log and only prints errors if it fails.
 
 The processor is a Docker image, so `cdk deploy` needs Docker. GitHub Actions has it built in. To deploy from your own laptop instead, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and keep it running while you deploy.
 
