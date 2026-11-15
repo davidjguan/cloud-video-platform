@@ -2,7 +2,7 @@
   "name": "cloud-video-platform",
   "version": "1.0.0",
   "private": true,
-  "description": "Cloud Video Platform: Cognito sign-in, API Gateway, CloudFront, EC2, Lambda, S3 and DynamoDB, deployed with AWS CDK and GitHub Actions",
+  "description": "Video-sharing platform on AWS (Cognito, API Gateway, CloudFront, EC2, Lambda, S3, DynamoDB, EventBridge, ECR), deployed with AWS CDK and GitHub Actions",
   "bin": {
     "cloud-video-platform": "bin/app.js"
   },

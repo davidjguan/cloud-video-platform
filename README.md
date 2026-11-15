@@ -1,5 +1,7 @@
 # Cloud Video Platform
 
+[![Test and deploy](https://github.com/davidjguan/cloud-video-platform/actions/workflows/deploy.yml/badge.svg)](https://github.com/davidjguan/cloud-video-platform/actions/workflows/deploy.yml)
+
 A video-sharing platform with real accounts, uploads, view counts, likes and comments, built on AWS and deployed entirely from code.
 
 ![Home page: rows for Continue watching, Recently added and Most viewed, with automatic thumbnails, view counts and watch progress](docs/home.jpg)
@@ -60,15 +62,33 @@ Everything (servers, database, auth, the event-driven video processor) is define
 ## Project layout
 
 ```
-bin/app.ts                 CDK app entry point
-lib/video-platform-stack.ts       All application infrastructure
-lib/github-oidc-stack.ts   Keyless deploy role for GitHub Actions
-lambda/api/                Lambda: router (handler.ts) + users, videos, comments, admin
-lambda/processor/          Container Lambda (Dockerfile + ffmpeg): thumbnails and duration
-site/                      Front end (plain HTML/CSS/JS)
-test/                      Jest: helpers, handler authorization, infrastructure assertions
-.github/workflows/         Test on every push, deploy on main
+bin/app.ts                    CDK app entry point
+lib/video-platform-stack.ts   All application infrastructure
+lib/github-oidc-stack.ts      Keyless deploy role for GitHub Actions
+lambda/api/                   Lambda: router (handler.ts) + users, videos, comments, admin
+lambda/processor/             Container Lambda (Dockerfile + ffmpeg): thumbnails and duration
+site/                         Front end (plain HTML/CSS/JS)
+test/                         Jest: helpers, handler authorization, infrastructure assertions
+.github/workflows/            Test on every push, deploy on main
 ```
+
+## Testing
+
+```bash
+npm run build   # TypeScript type-check
+npm test        # 52 Jest tests, a few seconds, no AWS account needed
+```
+
+- **Pure helpers** (input validation, parsing, ffmpeg output) have unit tests.
+- **API authorization** is tested against a mocked AWS SDK (`aws-sdk-client-mock`). For example, a non-admin can't delete someone else's video or comment, and a repeat like doesn't double-count.
+- **Infrastructure** is tested by synthesizing the CDK stack and asserting on the CloudFormation template: no SSH port on the server, a JWT authorizer on every route, CORS limited to browser uploads, and the EventBridge rule wired to the processor.
+
+## Trade-offs and next steps
+
+- **EC2 serves the site.** Serving it straight from S3 behind CloudFront would be simpler and cheaper. EC2 is kept to show a locked-down server (CloudFront-only security group, no SSH, Session Manager access).
+- **The catalog loads in one request.** The API lists the bucket (one page, up to 1,000 videos) and batch-reads their metadata. That's fine at this scale (dozens of videos). Beyond it, the next steps are pagination and a search index.
+- **No adaptive streaming.** Videos play as single MP4 files. HLS transcoding (multiple bitrates) would be the next step for slow connections.
+- **Not yet measured:** load testing and monitoring (CloudWatch dashboards and alarms) are planned.
 
 ## Setup (first time)
 
