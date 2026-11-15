@@ -2,6 +2,8 @@
 
 A video-sharing platform with real accounts, uploads, view counts, likes and comments, built on AWS and deployed entirely from code.
 
+![Home page: rows for Continue watching, Recently added and Most viewed, with automatic thumbnails, view counts and watch progress](docs/home.jpg)
+
 Everything (servers, database, auth, the event-driven video processor) is defined as infrastructure as code and deployed by CI/CD on every push.
 
 **Stack:** Amazon Cognito · API Gateway (HTTP API) · CloudFront · EC2 (Nginx) · Lambda (TypeScript) · S3 · DynamoDB · EventBridge · ECR (container image with ffmpeg) · AWS CDK · GitHub Actions
@@ -19,26 +21,15 @@ Everything (servers, database, auth, the event-driven video processor) is define
 - **Browsing:** a thumbnail grid plus rows for Continue watching, Recently added, Most viewed and Your liked videos. Each video has its own watch page (`#/watch/<video>`) with comments and an "Up next" list, so links and the Back button work.
 - **Your data:** an Account window shows your activity and lets you download your stored record as JSON.
 
+![Watch page: video player, view and like counts, comments, and an Up next list](docs/watch.jpg)
+*The watch page: views count each person once, likes and comments are tied to the signed-in account, and "Up next" lists unwatched videos first.*
+
+![A new upload shows "Processing…", then about 10 seconds later has a thumbnail and its 0:22 length](docs/thumbnail-before-after.png)
+*Automatic thumbnails: the upload lands in S3, EventBridge triggers the ffmpeg processor, and the card updates on its own.*
+
 ## Architecture
 
-```mermaid
-flowchart LR
-  U[Browser] -- HTTPS --> CF[CloudFront]
-  U -- sign up / sign in --> COG[Cognito User Pool]
-  CF -- "/*" --> EC2[EC2 + Nginx<br/>serves the site]
-  CF -- "/api/*" --> APIGW[API Gateway<br/>JWT authorizer]
-  COG -. issues ID token .-> U
-  APIGW -. verifies token .-> COG
-  APIGW --> L[Lambda]
-  L --> DDB[(DynamoDB<br/>Users · Videos · Comments)]
-  L -- presigned URLs --> S3[(S3 videos bucket)]
-  U -- "play / upload (presigned)" --> S3
-  SITE[(S3 site bucket)] -- synced every minute --> EC2
-  S3 -- "Object Created" --> EB[EventBridge rule]
-  EB --> P[Processor Lambda<br/>container image in ECR · ffmpeg]
-  P -- thumbnail --> S3
-  P -- duration, size --> DDB
-```
+![Architecture: browser to CloudFront, EC2 and API Gateway/Lambda, with DynamoDB, S3 and an EventBridge-triggered ffmpeg processor](docs/architecture.svg)
 
 | Service | Role |
 |---|---|

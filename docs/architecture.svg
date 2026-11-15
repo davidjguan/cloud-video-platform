@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 660" width="1160" height="660" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#475569"/>
+    </marker>
+    <style>
+      .box { stroke-width: 1.5; rx: 10; }
+      .t { font-size: 15px; font-weight: 600; fill: #0f172a; text-anchor: middle; }
+      .s { font-size: 12px; fill: #475569; text-anchor: middle; }
+      .lbl { font-size: 12px; fill: #334155; }
+      .line { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+      .net { fill: #ede9fe; stroke: #7c3aed; }
+      .cmp { fill: #ffedd5; stroke: #ea580c; }
+      .sto { fill: #dcfce7; stroke: #16a34a; }
+      .evt { fill: #fce7f3; stroke: #db2777; }
+      .idn { fill: #fee2e2; stroke: #dc2626; }
+      .usr { fill: #dbeafe; stroke: #2563eb; }
+      .zone { fill: none; stroke: #cbd5e1; stroke-dasharray: 4 4; rx: 14; }
+      .zt { font-size: 12px; font-weight: 600; fill: #64748b; letter-spacing: .06em; }
+    </style>
+  </defs>
+
+  <rect width="1160" height="660" fill="#ffffff"/>
+
+  <!-- Background zones: request path vs. event-driven processing -->
+  <rect class="zone" rx="14" x="190" y="20" width="950" height="455"/>
+  <text class="zt" x="206" y="42">REQUEST PATH</text>
+  <rect class="zone" rx="14" x="660" y="490" width="480" height="150"/>
+  <text class="zt" x="676" y="512">EVENT-DRIVEN PROCESSING</text>
+
+  <!-- ===== Boxes ===== -->
+  <rect class="box usr" rx="10" x="20" y="220" width="140" height="64"/>
+  <text class="t" x="90" y="248">Browser</text>
+  <text class="s" x="90" y="267">HTML · CSS · JS</text>
+
+  <rect class="box idn" rx="10" x="215" y="60" width="170" height="64"/>
+  <text class="t" x="300" y="88">Cognito</text>
+  <text class="s" x="300" y="107">sign-up · sign-in · admins</text>
+
+  <rect class="box net" rx="10" x="215" y="220" width="170" height="64"/>
+  <text class="t" x="300" y="248">CloudFront</text>
+  <text class="s" x="300" y="267">one HTTPS domain</text>
+
+  <rect class="box cmp" rx="10" x="465" y="130" width="180" height="64"/>
+  <text class="t" x="555" y="158">EC2 + Nginx</text>
+  <text class="s" x="555" y="177">serves the site</text>
+
+  <rect class="box sto" rx="10" x="715" y="130" width="180" height="64"/>
+  <text class="t" x="805" y="158">S3 site bucket</text>
+  <text class="s" x="805" y="177">website files</text>
+
+  <rect class="box net" rx="10" x="465" y="310" width="180" height="64"/>
+  <text class="t" x="555" y="338">API Gateway</text>
+  <text class="s" x="555" y="357">Cognito JWT authorizer</text>
+
+  <rect class="box cmp" rx="10" x="715" y="310" width="180" height="64"/>
+  <text class="t" x="805" y="338">API Lambda</text>
+  <text class="s" x="805" y="357">TypeScript</text>
+
+  <rect class="box sto" rx="10" x="960" y="225" width="160" height="64"/>
+  <text class="t" x="1040" y="253">DynamoDB</text>
+  <text class="s" x="1040" y="272">Users · Videos · Comments</text>
+
+  <rect class="box sto" rx="10" x="960" y="390" width="160" height="64"/>
+  <text class="t" x="1040" y="418">S3 videos bucket</text>
+  <text class="s" x="1040" y="437">videos/ · thumbnails/</text>
+
+  <rect class="box evt" rx="10" x="960" y="545" width="160" height="64"/>
+  <text class="t" x="1040" y="573">EventBridge</text>
+  <text class="s" x="1040" y="592">"Object Created" rule</text>
+
+  <rect class="box cmp" rx="10" x="690" y="545" width="210" height="64"/>
+  <text class="t" x="795" y="573">Processor Lambda</text>
+  <text class="s" x="795" y="592">container image in ECR · ffmpeg</text>
+
+  <!-- ===== Arrows ===== -->
+  <!-- Browser <-> Cognito -->
+  <path class="line" d="M70 220 V92 H213"/>
+  <text class="lbl" x="22" y="150">sign in</text>
+  <path class="line dash" d="M215 112 H112 V218"/>
+  <text class="lbl" x="120" y="134">ID token</text>
+
+  <!-- Browser -> CloudFront -->
+  <path class="line" d="M160 252 H213"/>
+  <text class="lbl" x="164" y="244">HTTPS</text>
+
+  <!-- CloudFront -> EC2 / API Gateway -->
+  <path class="line" d="M385 240 L463 168"/>
+  <text class="lbl" x="398" y="200">/*</text>
+  <path class="line" d="M385 264 L463 336"/>
+  <text class="lbl" x="436" y="300">/api/*</text>
+
+  <!-- Site bucket -> EC2 -->
+  <path class="line" d="M715 162 H647"/>
+  <text class="lbl" x="652" y="123">sync / min</text>
+
+  <!-- API Gateway -> Lambda -->
+  <path class="line" d="M645 342 H713"/>
+
+  <!-- Lambda -> DynamoDB / S3 -->
+  <path class="line" d="M895 328 L958 270"/>
+  <path class="line" d="M895 356 L958 410"/>
+  <text class="lbl" x="812" y="396">presigned URLs</text>
+
+  <!-- Browser -> S3 directly with presigned URLs -->
+  <path class="line dash" d="M110 284 V440 H958"/>
+  <text class="lbl" x="420" y="432">play / upload directly (presigned GET / POST, up to 100 MB)</text>
+
+  <!-- S3 -> EventBridge -> Processor -->
+  <path class="line" d="M1040 454 V543"/>
+  <text class="lbl" x="1048" y="505">new .mp4</text>
+  <path class="line" d="M960 577 H902"/>
+
+  <!-- Processor -> S3 (thumbnail) and DynamoDB (metadata) -->
+  <path class="line" d="M850 545 L958 452"/>
+  <text class="lbl" x="924" y="516">thumbnail .jpg</text>
+  <path class="line dash" d="M795 609 V636 H1140 V257 H1122"/>
+  <text class="lbl" x="905" y="630">duration · size · status</text>
+</svg>

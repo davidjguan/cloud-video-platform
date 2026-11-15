@@ -15,6 +15,6 @@
     "isolatedModules": true,
     "types": ["node", "jest"]
   },
-  "include": ["bin", "lib", "lambda", "test"],
+  "include": ["bin", "lib", "lambda", "scripts", "test"],
   "exclude": ["node_modules", "cdk.out"]
 }
